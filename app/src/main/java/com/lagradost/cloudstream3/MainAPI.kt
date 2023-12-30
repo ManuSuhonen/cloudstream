@@ -31,7 +31,7 @@ import java.util.*
 import kotlin.math.absoluteValue
 
 const val USER_AGENT =
-    "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
 
 //val baseHeader = mapOf("User-Agent" to USER_AGENT)
 val mapper = JsonMapper.builder().addModule(KotlinModule())

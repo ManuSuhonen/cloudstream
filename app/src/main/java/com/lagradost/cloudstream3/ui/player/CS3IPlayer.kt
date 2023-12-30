@@ -578,7 +578,7 @@ class CS3IPlayer : IPlayer {
 
             val source = if (interceptor == null) {
                 DefaultHttpDataSource.Factory() //TODO USE app.baseClient
-                    .setUserAgent(USER_AGENT)
+                    .setUserAgent("Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                     .setAllowCrossProtocolRedirects(true)   //https://stackoverflow.com/questions/69040127/error-code-io-bad-http-status-exoplayer-android
             } else {
                 val client = app.baseClient.newBuilder()
