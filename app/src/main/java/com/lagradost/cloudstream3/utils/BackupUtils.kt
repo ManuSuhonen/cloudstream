@@ -26,13 +26,13 @@ import com.lagradost.cloudstream3.syncproviders.providers.MALApi.Companion.MAL_T
 import com.lagradost.cloudstream3.syncproviders.providers.MALApi.Companion.MAL_UNIXTIME_KEY
 import com.lagradost.cloudstream3.syncproviders.providers.MALApi.Companion.MAL_USER_KEY
 import com.lagradost.cloudstream3.syncproviders.providers.OpenSubtitlesApi.Companion.OPEN_SUBTITLES_USER_KEY
+import com.lagradost.cloudstream3.syncproviders.providers.SubDlApi.Companion.SUBDL_SUBTITLES_USER_KEY
 import com.lagradost.cloudstream3.ui.result.txt
 import com.lagradost.cloudstream3.utils.Coroutines.ioSafe
 import com.lagradost.cloudstream3.utils.Coroutines.main
 import com.lagradost.cloudstream3.utils.DataStore.getDefaultSharedPrefs
 import com.lagradost.cloudstream3.utils.DataStore.getSharedPrefs
 import com.lagradost.cloudstream3.utils.DataStore.mapper
-import com.lagradost.cloudstream3.utils.DataStore.setKeyRaw
 import com.lagradost.cloudstream3.utils.UIHelper.checkWrite
 import com.lagradost.cloudstream3.utils.UIHelper.requestRW
 import com.lagradost.cloudstream3.utils.VideoDownloadManager.setupStream
@@ -41,7 +41,7 @@ import java.io.OutputStream
 import java.io.PrintWriter
 import java.lang.System.currentTimeMillis
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
 
 object BackupUtils {
 
@@ -65,12 +65,18 @@ object BackupUtils {
         PLUGINS_KEY_LOCAL,
 
         OPEN_SUBTITLES_USER_KEY,
+        SUBDL_SUBTITLES_USER_KEY,
+
+        DOWNLOAD_EPISODE_CACHE,
+
+        "biometric_key", // can lock down users if backup is shared on a incompatible device
         "nginx_user", // Nginx user key
+        "download_path_key" // No access rights after restore data from backup
     )
 
-    /** false if blacklisted key */
+    /** false if key should not be contained in backup */
     private fun String.isTransferable(): Boolean {
-        return !nonTransferableKeys.contains(this)
+        return !nonTransferableKeys.any { this.contains(it) }
     }
 
     private var restoreFileSelector: ActivityResultLauncher<Array<String>>? = null
@@ -252,8 +258,12 @@ object BackupUtils {
         map: Map<String, T>?,
         isEditingAppSettings: Boolean = false
     ) {
-        map?.filter { it.key.isTransferable() }?.forEach {
-            setKeyRaw(it.key, it.value, isEditingAppSettings)
+        val editor = DataStore.editor(this, isEditingAppSettings)
+        map?.forEach {
+            if (it.key.isTransferable()) {
+                editor.setKeyRaw(it.key, it.value)
+            }
         }
+        editor.apply()
     }
 }

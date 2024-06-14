@@ -27,10 +27,18 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.mvvm.normalSafeApiCall
 import com.lagradost.cloudstream3.network.initClient
 import com.lagradost.cloudstream3.ui.EasterEggMonke
+import com.lagradost.cloudstream3.ui.settings.Globals.EMULATOR
+import com.lagradost.cloudstream3.ui.settings.Globals.PHONE
+import com.lagradost.cloudstream3.ui.settings.Globals.TV
+import com.lagradost.cloudstream3.ui.settings.Globals.beneneCount
+import com.lagradost.cloudstream3.ui.settings.Globals.isLayout
 import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.getPref
+import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.hideOn
 import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.setPaddingBottom
 import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.setToolBarScrollFlags
 import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.setUpToolbar
+import com.lagradost.cloudstream3.utils.BatteryOptimizationChecker.isAppRestricted
+import com.lagradost.cloudstream3.utils.BatteryOptimizationChecker.showBatteryOptimizationDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showBottomDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showMultiDialog
@@ -44,7 +52,6 @@ import com.lagradost.safefile.SafeFile
 
 // Change local language settings in the app.
 fun getCurrentLocale(context: Context): String {
-    // val dm = res.displayMetrics
     val res = context.resources
     val conf = res.configuration
 
@@ -94,6 +101,7 @@ val appLanguages = arrayListOf(
     Triple("", "македонски", "mk"),
     Triple("", "മലയാളം", "ml"),
     Triple("", "bahasa Melayu", "ms"),
+    Triple("", "Malti", "mt"),
     Triple("", "ဗမာစာ", "my"),
     Triple("", "नेपाली", "ne"),
     Triple("", "Nederlands", "nl"),
@@ -201,6 +209,18 @@ class SettingsGeneral : PreferenceFragmentCompat() {
                 }
             }
             return@setOnPreferenceClickListener true
+        }
+
+        getPref(R.string.battery_optimisation_key)?.hideOn(TV or EMULATOR)?.setOnPreferenceClickListener {
+            val ctx = context ?: return@setOnPreferenceClickListener false
+
+            if (isAppRestricted(ctx)) {
+                showBatteryOptimizationDialog(ctx)
+            } else {
+                showToast(R.string.app_unrestricted_toast)
+            }
+
+            true
         }
 
         fun showAdd() {
@@ -378,30 +398,30 @@ class SettingsGeneral : PreferenceFragmentCompat() {
         }
 
         try {
-            SettingsFragment.beneneCount =
+            beneneCount =
                 settingsManager.getInt(getString(R.string.benene_count), 0)
             getPref(R.string.benene_count)?.let { pref ->
                 pref.summary =
-                    if (SettingsFragment.beneneCount <= 0) getString(R.string.benene_count_text_none) else getString(
+                    if (beneneCount <= 0) getString(R.string.benene_count_text_none) else getString(
                         R.string.benene_count_text
                     ).format(
-                        SettingsFragment.beneneCount
+                        beneneCount
                     )
 
                 pref.setOnPreferenceClickListener {
                     try {
-                        SettingsFragment.beneneCount++
-                        if (SettingsFragment.beneneCount%20 == 0) {
+                        beneneCount++
+                        if (beneneCount%20 == 0) {
                             val intent = Intent(context, EasterEggMonke::class.java)
                             startActivity(intent)
                         }
                         settingsManager.edit().putInt(
                             getString(R.string.benene_count),
-                            SettingsFragment.beneneCount
+                            beneneCount
                         )
                             .apply()
                         it.summary =
-                            getString(R.string.benene_count_text).format(SettingsFragment.beneneCount)
+                            getString(R.string.benene_count_text).format(beneneCount)
                     } catch (e: Exception) {
                         logError(e)
                     }

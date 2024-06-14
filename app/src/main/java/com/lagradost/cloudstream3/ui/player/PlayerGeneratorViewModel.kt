@@ -5,6 +5,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.mvvm.Resource
 import com.lagradost.cloudstream3.mvvm.launchSafe
 import com.lagradost.cloudstream3.mvvm.logError
@@ -44,6 +45,8 @@ class PlayerGeneratorViewModel : ViewModel() {
      * Save the Episode ID to prevent starting multiple link loading Jobs when preloading links.
      */
     private var currentLoadingEpisodeId: Int? = null
+
+    var forceClearCache = false
 
     fun setSubtitleYear(year: Int?) {
         _currentSubtitleYear.postValue(year)
@@ -109,6 +112,9 @@ class PlayerGeneratorViewModel : ViewModel() {
             }
         }
     }
+    fun getLoadResponse(): LoadResponse? {
+        return normalSafeApiCall { (generator as? RepoLinkGenerator?)?.page }
+    }
 
     fun getMeta(): Any? {
         return normalSafeApiCall { generator?.getCurrent() }
@@ -168,7 +174,7 @@ class PlayerGeneratorViewModel : ViewModel() {
         }
     }
 
-    fun loadLinks(clearCache: Boolean = false, type: LoadType = LoadType.InApp) {
+    fun loadLinks(type: LoadType = LoadType.InApp) {
         Log.i(TAG, "loadLinks")
         currentJob?.cancel()
 
@@ -183,7 +189,7 @@ class PlayerGeneratorViewModel : ViewModel() {
             // load more data
             _loadingLinks.postValue(Resource.Loading())
             val loadingState = safeApiCall {
-                generator?.generateLinks(type = type, clearCache = clearCache, callback = {
+                generator?.generateLinks(type = type, clearCache = forceClearCache, callback = {
                     currentLinks.add(it)
                     // Clone to prevent ConcurrentModificationException
                     normalSafeApiCall {

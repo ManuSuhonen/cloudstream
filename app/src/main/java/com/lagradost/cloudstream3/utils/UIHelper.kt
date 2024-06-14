@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AppOpsManager
 import android.app.Dialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -14,12 +16,15 @@ import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
+import android.os.TransactionTooLargeException
+import android.util.Log
 import android.view.*
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.ListAdapter
 import android.widget.ListView
+import android.widget.Toast.LENGTH_LONG
 import androidx.annotation.AttrRes
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
@@ -30,6 +35,7 @@ import androidx.appcompat.view.menu.MenuBuilder
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import androidx.core.graphics.alpha
 import androidx.core.graphics.blue
 import androidx.core.graphics.drawable.toBitmapOrNull
@@ -39,6 +45,7 @@ import androidx.core.view.marginBottom
 import androidx.core.view.marginLeft
 import androidx.core.view.marginRight
 import androidx.core.view.marginTop
+import androidx.core.view.updateLayoutParams
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.fragment.NavHostFragment
@@ -52,18 +59,23 @@ import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions.bitmapTransform
 import com.bumptech.glide.request.target.Target
+import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipDrawable
 import com.google.android.material.chip.ChipGroup
+import com.lagradost.cloudstream3.AcraApplication.Companion.context
 import com.lagradost.cloudstream3.CommonActivity.activity
+import com.lagradost.cloudstream3.CommonActivity.showToast
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.ui.result.UiImage
-import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.isEmulatorSettings
-import com.lagradost.cloudstream3.ui.settings.SettingsFragment.Companion.isTvSettings
+import com.lagradost.cloudstream3.ui.result.UiText
+import com.lagradost.cloudstream3.ui.result.txt
+import com.lagradost.cloudstream3.ui.settings.Globals
+import com.lagradost.cloudstream3.ui.settings.Globals.EMULATOR
+import com.lagradost.cloudstream3.ui.settings.Globals.isLayout
 import jp.wasabeef.glide.transformations.BlurTransformation
 import kotlin.math.roundToInt
-
 
 object UIHelper {
     val Int.toPx: Int get() = (this * Resources.getSystem().displayMetrics.density).toInt()
@@ -86,8 +98,9 @@ object UIHelper {
         if (view == null) return
         view.removeAllViews()
         val context = view.context ?: return
+        val maxTags = tags.take(10) // Limited because they are too much
 
-        tags.forEach { tag ->
+        maxTags.forEach { tag ->
             val chip = Chip(context)
             val chipDrawable = ChipDrawable.createFromAttributes(
                 context,
@@ -118,6 +131,35 @@ object UIHelper {
         )
     }
 
+    fun clipboardHelper(label: UiText, text: CharSequence) {
+        val ctx = context ?: return
+        try {
+            ctx.let {
+                val clip = ClipData.newPlainText(label.asString(ctx), text)
+                val labelSuffix = txt(R.string.toast_copied).asString(ctx)
+                ctx.getSystemService<ClipboardManager>()?.setPrimaryClip(clip)
+
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+                    showToast("${label.asString(ctx)} $labelSuffix")
+                }
+            }
+        } catch (t: Throwable) {
+            Log.e("ClipboardService", "$t")
+            when (t) {
+                is SecurityException -> {
+                    showToast(R.string.clipboard_permission_error)
+                }
+
+                is TransactionTooLargeException -> {
+                    showToast(R.string.clipboard_too_large)
+                }
+
+                else -> {
+                    showToast(R.string.clipboard_unknown_error, LENGTH_LONG)
+                }
+            }
+        }
+    }
 
     /**
      * Sets ListView height dynamically based on the height of the items.
@@ -168,6 +210,14 @@ object UIHelper {
         }
     }
 
+    fun View?.setAppBarNoScrollFlagsOnTV() {
+        if (isLayout(Globals.TV or EMULATOR)) {
+            this?.updateLayoutParams<AppBarLayout.LayoutParams> {
+                scrollFlags = AppBarLayout.LayoutParams.SCROLL_FLAG_NO_SCROLL
+            }
+        }
+    }
+
     fun Activity.hideKeyboard() {
         window?.decorView?.clearFocus()
         this.findViewById<View>(android.R.id.content)?.rootView?.let {
@@ -179,9 +229,7 @@ object UIHelper {
         try {
             if (this is FragmentActivity) {
                 val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment?
-                navHostFragment?.navController?.let {
-                    it.navigate(navigation, arguments)
-                }
+                navHostFragment?.navController?.navigate(navigation, arguments)
             }
         } catch (t: Throwable) {
             logError(t)
@@ -401,84 +449,37 @@ object UIHelper {
         // Enables regular immersive mode.
         // For "lean back" mode, remove SYSTEM_UI_FLAG_IMMERSIVE.
         // Or for "sticky immersive," replace it with SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        // Set the content to appear under the system bars so that the
-                        // content doesn't resize when the system bars hide and show.
-                        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        // Hide the nav bar and status bar
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN
-                //  or View.SYSTEM_UI_FLAG_LOW_PROFILE
-                )
-        // window.addFlags(View.KEEP_SCREEN_ON)
+        /** BUGGED AF  **/
+        /*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowInsetsControllerCompat(window, View(this)).let { controller ->
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }*/
+
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            // Set the content to appear under the system bars so that the
+                            // content doesn't resize when the system bars hide and show.
+                            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            // Hide the nav bar and status bar
+                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    )
+          //}
     }
 
     fun FragmentActivity.popCurrentPage() {
         this.onBackPressedDispatcher.onBackPressed()
-        /*val currentFragment = supportFragmentManager.fragments.lastOrNull {
-            it.isVisible
-        } ?: return
-
-        supportFragmentManager.beginTransaction()
-            .setCustomAnimations(
-                R.anim.enter_anim,
-                R.anim.exit_anim,
-                R.anim.pop_enter,
-                R.anim.pop_exit
-            )
-            .remove(currentFragment)
-            .commitAllowingStateLoss()*/
     }
-    /*
-    fun FragmentActivity.popCurrentPage(isInPlayer: Boolean, isInExpandedView: Boolean, isInResults: Boolean) {
-        val currentFragment = supportFragmentManager.fragments.lastOrNull {
-            it.isVisible
-        }
-            ?: //this.onBackPressedDispatcher.onBackPressed()
-            return
-
-/*
-        if (tvActivity == null) {
-            requestedOrientation = if (settingsManager?.getBoolean("force_landscape", false) == true) {
-                ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
-        }*/
-
-        // No fucked animations leaving the player :)
-        when {
-            isInPlayer -> {
-                supportFragmentManager.beginTransaction()
-                    //.setCustomAnimations(R.anim.enter, R.anim.exit, R.anim.pop_enter, R.anim.pop_exit)
-                    .remove(currentFragment)
-                    .commitAllowingStateLoss()
-            }
-            isInExpandedView && !isInResults -> {
-                supportFragmentManager.beginTransaction()
-                    .setCustomAnimations(
-                        R.anim.enter_anim,//R.anim.enter_from_right,
-                        R.anim.exit_anim,//R.anim.exit_to_right,
-                        R.anim.pop_enter,
-                        R.anim.pop_exit
-                    )
-                    .remove(currentFragment)
-                    .commitAllowingStateLoss()
-            }
-            else -> {
-                supportFragmentManager.beginTransaction()
-                    .setCustomAnimations(R.anim.enter_anim, R.anim.exit_anim, R.anim.pop_enter, R.anim.pop_exit)
-                    .remove(currentFragment)
-                    .commitAllowingStateLoss()
-            }
-        }
-    }*/
 
     fun Context.getStatusBarHeight(): Int {
-        if (isTvSettings()) {
+        if (isLayout(Globals.TV or EMULATOR)) {
             return 0
         }
 
@@ -542,13 +543,26 @@ object UIHelper {
 
     fun Activity.changeStatusBarState(hide: Boolean): Int {
         return if (hide) {
-            window?.setFlags(
-                WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                WindowManager.LayoutParams.FLAG_FULLSCREEN
-            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.hide(WindowInsets.Type.statusBars())
+
+            } else {
+                @Suppress("DEPRECATION")
+                window.setFlags(
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN
+                )
+            }
             0
         } else {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.show(WindowInsets.Type.statusBars())
+
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            }
+
             this.getStatusBarHeight()
         }
     }
@@ -556,13 +570,18 @@ object UIHelper {
     // Shows the system bars by removing all the flags
     // except for the ones that make the content appear under the system bars.
     fun Activity.showSystemUI() {
-        window.decorView.systemUiVisibility =
 
-            (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+        /*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
 
-        changeStatusBarState(isEmulatorSettings())
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            WindowInsetsControllerCompat(window, View(this)).show(WindowInsetsCompat.Type.systemBars())
 
-        // window.clearFlags(View.KEEP_SCREEN_ON)
+        } else {*/ /** WINDOW COMPAT IS BUGGY DUE TO FU*KED UP PLAYER AND TRAILERS **/
+            window.decorView.systemUiVisibility =
+                (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+        //}
+
+        changeStatusBarState(isLayout(EMULATOR))
     }
 
     fun Context.shouldShowPIPMode(isInPlayer: Boolean): Boolean {

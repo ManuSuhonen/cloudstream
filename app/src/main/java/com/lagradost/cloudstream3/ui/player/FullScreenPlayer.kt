@@ -7,21 +7,14 @@ import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.content.res.Configuration
-import android.content.res.Resources
 import android.graphics.Color
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
-import android.util.DisplayMetrics
-import android.view.KeyEvent
-import android.view.LayoutInflater
-import android.view.MotionEvent
-import android.view.Surface
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
+import android.text.format.DateUtils
+import android.view.*
 import android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
@@ -31,15 +24,15 @@ import androidx.core.graphics.blue
 import androidx.core.graphics.green
 import androidx.core.graphics.red
 import androidx.core.view.isGone
+import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.core.widget.doOnTextChanged
 import androidx.preference.PreferenceManager
-import com.lagradost.cloudstream3.AcraApplication.Companion.getKey
-import com.lagradost.cloudstream3.AcraApplication.Companion.setKey
 import com.lagradost.cloudstream3.CommonActivity.keyEventListener
 import com.lagradost.cloudstream3.CommonActivity.playerEventListener
 import com.lagradost.cloudstream3.CommonActivity.screenHeight
 import com.lagradost.cloudstream3.CommonActivity.screenWidth
+import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.databinding.PlayerCustomLayoutBinding
 import com.lagradost.cloudstream3.databinding.SubtitleOffsetBinding
@@ -48,6 +41,10 @@ import com.lagradost.cloudstream3.ui.player.GeneratorPlayer.Companion.subsProvid
 import com.lagradost.cloudstream3.ui.player.source_priority.QualityDataHelper
 import com.lagradost.cloudstream3.ui.result.setText
 import com.lagradost.cloudstream3.ui.result.txt
+import com.lagradost.cloudstream3.ui.settings.Globals
+import com.lagradost.cloudstream3.ui.settings.Globals.EMULATOR
+import com.lagradost.cloudstream3.ui.settings.Globals.TV
+import com.lagradost.cloudstream3.ui.settings.Globals.isLayout
 import com.lagradost.cloudstream3.utils.AppUtils.isUsingMobileData
 import com.lagradost.cloudstream3.utils.DataStoreHelper
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
@@ -59,9 +56,9 @@ import com.lagradost.cloudstream3.utils.UIHelper.hideSystemUI
 import com.lagradost.cloudstream3.utils.UIHelper.popCurrentPage
 import com.lagradost.cloudstream3.utils.UIHelper.showSystemUI
 import com.lagradost.cloudstream3.utils.UIHelper.toPx
+import com.lagradost.cloudstream3.utils.UserPreferenceDelegate
 import com.lagradost.cloudstream3.utils.Vector2
 import kotlin.math.*
-
 
 const val MINIMUM_SEEK_TIME = 7000L         // when swipe seeking
 const val MINIMUM_VERTICAL_SWIPE = 2.0f     // in percentage
@@ -78,11 +75,9 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     private var isVerticalOrientation: Boolean = false
     protected open var lockRotation = true
     protected open var isFullScreenPlayer = true
-    protected open var isTv = false
-
     protected var playerBinding: PlayerCustomLayoutBinding? = null
 
-
+    private var durationMode : Boolean by UserPreferenceDelegate("duration_mode", false)
     // state of player UI
     protected var isShowing = false
     protected var isLocked = false
@@ -183,7 +178,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
     open fun openOnlineSubPicker(
         context: Context,
-        imdbId: Long?,
+        loadResponse: LoadResponse?,
         dismissCallback: (() -> Unit)
     ) {
         throw NotImplementedError()
@@ -379,7 +374,6 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     }
 
     protected fun exitFullscreen() {
-        activity?.showSystemUI()
         //if (lockRotation)
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
 
@@ -391,6 +385,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
         }
         activity?.window?.attributes = lp
+        activity?.showSystemUI()
     }
 
     override fun onResume() {
@@ -494,6 +489,11 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                     activity?.hideSystemUI()
             }
             applyBtt.setOnClickListener {
+                dialog.dismissSafe(activity)
+                player.seekTime(1L)
+            }
+            resetBtt.setOnClickListener {
+                subtitleDelay = 0
                 dialog.dismissSafe(activity)
                 player.seekTime(1L)
             }
@@ -1158,6 +1158,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                                 }
                             }
 
+                            KeyEvent.KEYCODE_DPAD_DOWN,
                             KeyEvent.KEYCODE_DPAD_UP -> {
                                 if (!isShowing) {
                                     onClickChange()
@@ -1206,7 +1207,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
                     // netflix capture back and hide ~monke
                     KeyEvent.KEYCODE_BACK -> {
-                        if (isShowing && isTv) {
+                        if (isShowing && isLayout(TV or EMULATOR)) {
                             onClickChange()
                             return true
                         }
@@ -1332,15 +1333,6 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             } else false
         }
 
-        //player_episodes_button?.setOnClickListener {
-        //    player_episodes_button?.isGone = true
-        //    player_episode_list?.isVisible = true
-        //}
-//
-        //player_episode_list?.adapter = PlayerEpisodeAdapter { click ->
-//
-        //}
-
         try {
             context?.let { ctx ->
                 val settingsManager = PreferenceManager.getDefaultSharedPreferences(ctx)
@@ -1425,10 +1417,19 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
         } catch (e: Exception) {
             logError(e)
         }
+
         playerBinding?.apply {
             playerPausePlay.setOnClickListener {
                 autoHide()
                 player.handleEvent(CSPlayerEvent.PlayPauseToggle)
+            }
+
+            exoDuration.setOnClickListener {
+                setRemainingTimeCounter(true)
+            }
+
+            timeLeft.setOnClickListener {
+                setRemainingTimeCounter(false)
             }
 
             skipChapterButton.setOnClickListener {
@@ -1515,32 +1516,14 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 return@setOnTouchListener false
             }
         }
+        // cs3 is peak media center
+        setRemainingTimeCounter(durationMode || Globals.isLayout(Globals.TV))
+        playerBinding?.exoPosition?.doOnTextChanged { _, _, _, _ ->
+            updateRemainingTime()
+        }
         // init UI
         try {
             uiReset()
-
-            // init chromecast UI
-            // removed due to having no use and bugging
-            //activity?.let {
-            //    if (it.isCastApiAvailable()) {
-            //        try {
-            //            CastButtonFactory.setUpMediaRouteButton(it, player_media_route_button)
-            //            val castContext = CastContext.getSharedInstance(it.applicationContext)
-            //
-            //            player_media_route_button?.isGone =
-            //                castContext.castState == CastState.NO_DEVICES_AVAILABLE
-            //            castContext.addCastStateListener { state ->
-            //                player_media_route_button?.isGone =
-            //                    state == CastState.NO_DEVICES_AVAILABLE
-            //            }
-            //        } catch (e: Exception) {
-            //            logError(e)
-            //        }
-            //    } else {
-            //        // if cast is not possible hide UI
-            //        player_media_route_button?.isGone = true
-            //    }
-            //}
         } catch (e: Exception) {
             logError(e)
         }
@@ -1556,6 +1539,24 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     override fun playerDimensionsLoaded(width: Int, height: Int) {
         isVerticalOrientation = height > width
         updateOrientation()
+    }
+
+    private fun updateRemainingTime() {
+        val duration = player.getDuration()
+        val position = player.getPosition()
+
+        if (duration != null && duration > 1 && position != null) {
+            val remainingTimeSeconds = (duration - position + 500) / 1000
+            val formattedTime = "-${DateUtils.formatElapsedTime(remainingTimeSeconds)}"
+
+            playerBinding?.timeLeft?.text = formattedTime
+        }
+    }
+
+    private fun setRemainingTimeCounter(showRemaining: Boolean) {
+        durationMode = showRemaining
+        playerBinding?.exoDuration?.isInvisible= showRemaining
+        playerBinding?.timeLeft?.isVisible = showRemaining
     }
 
     private fun dynamicOrientation(): Int {

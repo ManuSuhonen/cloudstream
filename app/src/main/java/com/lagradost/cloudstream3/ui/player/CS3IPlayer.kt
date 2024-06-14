@@ -50,6 +50,7 @@ import androidx.preference.PreferenceManager
 import com.lagradost.cloudstream3.APIHolder.getApiFromNameNull
 import com.lagradost.cloudstream3.AcraApplication.Companion.getKey
 import com.lagradost.cloudstream3.AcraApplication.Companion.setKey
+import com.lagradost.cloudstream3.MainActivity.Companion.deleteFileOnExit
 import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.mvvm.debugAssert
@@ -657,7 +658,7 @@ class CS3IPlayer : IPlayer {
                 SimpleCache(
                     File(
                         context.cacheDir, "exoplayer"
-                    ).also { it.deleteOnExit() }, // Ensures always fresh file
+                    ).also { deleteFileOnExit(it) }, // Ensures always fresh file
                     LeastRecentlyUsedCacheEvictor(cacheSize),
                     databaseProvider
                 )
@@ -1117,6 +1118,9 @@ class CS3IPlayer : IPlayer {
                         }
 
                         Player.STATE_ENDED -> {
+                            // Resets subtitle delay on ended video
+                            setSubtitleOffset(0)
+
                             // Only play next episode if autoplay is on (default)
                             if (PreferenceManager.getDefaultSharedPreferences(context)
                                     ?.getBoolean(

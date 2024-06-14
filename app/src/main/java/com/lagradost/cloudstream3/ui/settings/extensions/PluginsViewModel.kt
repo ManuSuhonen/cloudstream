@@ -9,6 +9,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lagradost.cloudstream3.CommonActivity.showToast
+import com.lagradost.cloudstream3.MainAPI.Companion.settingsForProvider
 import com.lagradost.cloudstream3.PROVIDER_STATUS_DOWN
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.amap
@@ -160,7 +161,7 @@ class PluginsViewModel : ViewModel() {
             PluginManager.downloadPlugin(
                 activity,
                 metadata.url,
-                metadata.name,
+                metadata.internalName,
                 repo,
                 isEnabled
             ) to message
@@ -181,8 +182,11 @@ class PluginsViewModel : ViewModel() {
     }
 
     private suspend fun updatePluginListPrivate(context: Context, repositoryUrl: String) {
+        val isAdult = settingsForProvider.enableAdult
         val plugins = getPlugins(repositoryUrl)
-        val list = plugins.map { plugin ->
+        val list = plugins.filter {
+            return@filter !(it.second.tvTypes?.contains("NSFW") == true && !isAdult)
+        }.map { plugin ->
             PluginViewData(plugin, isDownloaded(context, plugin.second.internalName, plugin.first))
         }
 

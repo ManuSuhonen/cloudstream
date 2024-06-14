@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import androidx.preference.PreferenceManager
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.json.JsonMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
+import com.fasterxml.jackson.module.kotlin.kotlinModule
 import com.lagradost.cloudstream3.AcraApplication.Companion.getKeyClass
 import com.lagradost.cloudstream3.AcraApplication.Companion.removeKey
 import com.lagradost.cloudstream3.AcraApplication.Companion.setKeyClass
@@ -50,8 +50,30 @@ class PreferenceDelegate<T : Any>(
     }
 }
 
+/** When inserting many keys use this function, this is because apply for every key is very expensive on memory */
+data class Editor(
+    val editor : SharedPreferences.Editor
+) {
+    /** Always remember to call apply after */
+    fun<T> setKeyRaw(path: String, value: T) {
+        when (value) {
+            is Boolean -> editor.putBoolean(path, value)
+            is Int -> editor.putInt(path, value)
+            is String -> editor.putString(path, value)
+            is Float -> editor.putFloat(path, value)
+            is Long -> editor.putLong(path, value)
+            (value as? Set<String> != null) -> editor.putStringSet(path, value as Set<String>)
+        }
+    }
+
+    fun apply() {
+        editor.apply()
+        System.gc()
+    }
+}
+
 object DataStore {
-    val mapper: JsonMapper = JsonMapper.builder().addModule(KotlinModule())
+    val mapper: JsonMapper = JsonMapper.builder().addModule(kotlinModule())
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false).build()
 
     private fun getPreferences(context: Context): SharedPreferences {
@@ -66,22 +88,10 @@ object DataStore {
         return "${folder}/${path}"
     }
 
-    fun <T> Context.setKeyRaw(path: String, value: T, isEditingAppSettings: Boolean = false) {
-        try {
-            val editor: SharedPreferences.Editor =
-                if (isEditingAppSettings) getDefaultSharedPrefs().edit() else getSharedPrefs().edit()
-            when (value) {
-                is Boolean -> editor.putBoolean(path, value)
-                is Int -> editor.putInt(path, value)
-                is String -> editor.putString(path, value)
-                is Float -> editor.putFloat(path, value)
-                is Long -> editor.putLong(path, value)
-                (value as? Set<String> != null) -> editor.putStringSet(path, value as Set<String>)
-            }
-            editor.apply()
-        } catch (e: Exception) {
-            logError(e)
-        }
+    fun editor(context : Context, isEditingAppSettings: Boolean = false) : Editor {
+        val editor: SharedPreferences.Editor =
+            if (isEditingAppSettings) context.getDefaultSharedPrefs().edit() else context.getSharedPrefs().edit()
+        return Editor(editor)
     }
 
     fun Context.getDefaultSharedPrefs(): SharedPreferences {
